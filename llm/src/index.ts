@@ -3,7 +3,6 @@ import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 
 // v1 agent
 import { ChatOpenAI } from '@langchain/openai';
@@ -11,6 +10,7 @@ import { createToolCallingAgent, AgentExecutor } from 'langchain/agents';
 import { AgentPromptClass } from './v1/agent-prompt';
 import { MemoryClass } from './v1/memory';
 import { lemonLawQualificationTool } from './v1/tools';
+
 // v2 chain
 
 // v3 graph
@@ -61,13 +61,7 @@ const singleAgent = async (ws: WebSocket, sessionId: string, input: string) => {
 wss.on('connection', (ws) => {
   ws.on('message', async (message) => {
     try {
-      const { input, userId } = JSON.parse(message.toString());
-      // If userId is not provided, generate a new uuid
-      const sessionId = userId || uuidv4();
-      // If sessionId was generated server-side, send it back to client
-      if (!userId) {
-        ws.send(JSON.stringify({ type: 'session', data: sessionId }));
-      }
+      const { input, sessionId } = JSON.parse(message.toString());
       await singleAgent(ws, sessionId, input);
     } catch (e) {
       ws.send(JSON.stringify({ type: 'error', data: (e as Error).message }));

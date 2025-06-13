@@ -8,15 +8,12 @@
       {
         "min_repair_orders": 1,
         "max_repair_orders": 2,
-        "repair_type": "Any",
         "days_oos": 30,
         "vehicle_age_years": 2,
         "mileage": 24000
       },
       {
         "min_repair_orders": 3,
-        "repair_type": "Any",
-        "days_oos": "N/A",
         "within_mfr_warranty": true
       }
     ]
@@ -42,13 +39,10 @@
         "repair_type": [
           "Engine", "Transmission", "Safety Concern"
         ],
-        "days_oos": "N/A",
         "within_mfr_warranty": true
       },
       {
         "min_repair_orders": 4,
-        "repair_type": "Any",
-        "days_oos": "N/A",
         "within_mfr_warranty": true
       }
     ]

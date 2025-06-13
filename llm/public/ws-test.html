@@ -2,19 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>WebSocket Agent Streaming Test</title>
+  <title>Lemon Law WebSocket Agent Test</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 2em; }
     #output { white-space: pre-wrap; border: 1px solid #ccc; padding: 1em; min-height: 100px; }
     #status { color: green; }
+    label { display: block; margin-top: 0.5em; }
   </style>
 </head>
 <body>
-  <h2>WebSocket Agent Streaming Test</h2>
+  <h2>Lemon Law WebSocket Agent Test</h2>
   <div>
-    <label>Input: <input id="input" value="recommend a game for me" style="width: 300px;"></label>
-    <label>User ID: <input id="userId" value="u1" style="width: 100px;"></label>
+    <label>Manufacturer: <input id="manufacturer" value="Ford"></label>
+    <label>Number of Repair Orders: <input id="repairOrders" type="number" value="2"></label>
+    <label>Repair Type: <input id="repairType" value="Any"></label>
+    <label>Days Out of Service: <input id="daysOOS" type="number" value="35"></label>
+    <label>Vehicle Age (years): <input id="vehicleAgeYears" type="number" value="1"></label>
+    <label>Mileage: <input id="mileage" type="number" value="15000"></label>
+    <label>Within Manufacturer Warranty: 
+      <select id="withinMfrWarranty">
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    </label>
+    <label>Session ID: <input id="sessionId" value="s1" style="width: 100px;"></label>
     <button id="send">Send</button>
+  </div>
+  <div>
+    <label>Or enter your own input:</label>
+    <textarea id="customInput" rows="3" placeholder="Type your own input here..." style="width:100%;margin-top:0.5em;"></textarea>
+    <button id="sendCustom">Send (use custom input)</button>
   </div>
   <div id="status"></div>
   <h3>Agent Output:</h3>
@@ -26,12 +43,50 @@
     document.getElementById('send').onclick = function() {
       output.textContent = '';
       status.textContent = 'Connecting...';
-      ws = new WebSocket('ws://' + location.hostname + ':3002');
+      ws = new WebSocket('ws://' + location.hostname + ':3000');
       ws.onopen = () => {
         status.textContent = 'Connected.';
+        // Build lemon law related input
+        const input = 
+          `My car is a ${document.getElementById('manufacturer').value}, ` +
+          `with ${document.getElementById('repairOrders').value} repairs, ` +
+          `repair type: ${document.getElementById('repairType').value}, ` +
+          `out of service for ${document.getElementById('daysOOS').value} days, ` +
+          `vehicle age: ${document.getElementById('vehicleAgeYears').value} years, ` +
+          `mileage: ${document.getElementById('mileage').value}, ` +
+          `within manufacturer warranty: ${document.getElementById('withinMfrWarranty').value}.`;
         ws.send(JSON.stringify({
-          input: document.getElementById('input').value,
-          userId: document.getElementById('userId').value
+          input,
+          sessionId: document.getElementById('sessionId').value
+        }));
+      };
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'token') {
+          output.textContent += msg.data;
+        } else if (msg.type === 'end') {
+          status.textContent = 'Done.';
+        } else if (msg.type === 'error') {
+          status.textContent = 'Error: ' + msg.data;
+        }
+      };
+      ws.onerror = (e) => {
+        status.textContent = 'WebSocket error.';
+      };
+      ws.onclose = () => {
+        status.textContent += ' (Connection closed)';
+      };
+    };
+    document.getElementById('sendCustom').onclick = function() {
+      output.textContent = '';
+      status.textContent = 'Connecting...';
+      ws = new WebSocket('ws://' + location.hostname + ':3000');
+      ws.onopen = () => {
+        status.textContent = 'Connected.';
+        const input = document.getElementById('customInput').value;
+        ws.send(JSON.stringify({
+          input,
+          sessionId: document.getElementById('sessionId').value
         }));
       };
       ws.onmessage = (event) => {
@@ -53,4 +108,4 @@
     };
   </script>
 </body>
-</html> 
+</html>

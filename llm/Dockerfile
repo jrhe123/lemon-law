@@ -7,10 +7,8 @@ RUN npm install
 
 COPY . .
 
-RUN npm run build
+EXPOSE 3000
 
-COPY src/full_game_catalog.docx dist/full_game_catalog.docx
+COPY ./src/lemon_rules.json ./dist/lemon_rules.json
 
-EXPOSE 3002
-
-CMD ["node", "dist/index.js"] 
+CMD ["npm", "run", "dev"] 
