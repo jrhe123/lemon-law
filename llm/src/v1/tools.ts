@@ -83,7 +83,7 @@ export const lemonLawQualificationTool = tool(
       g.manufacturers.map((m: string) => m.toLowerCase()).includes(brand.toLowerCase())
     );
     if (!group) {
-      return { qualified: false, reason: `No lemon law rules found for manufacturer: ${brand}.` };
+      return JSON.stringify({ qualified: false, reason: `No lemon law rules found for manufacturer: ${brand}.` });
     }
     for (const rule of group.rules) {
       if (rule.min_repair_orders && repairOrders < rule.min_repair_orders) continue;
@@ -109,9 +109,9 @@ export const lemonLawQualificationTool = tool(
         if (withinMfrWarranty !== true) continue;
       }
       // If all required fields in this rule are satisfied, qualified
-      return { qualified: true, reason: "Qualified for lemon law." };
+      return JSON.stringify({ qualified: true, reason: "Qualified for lemon law." });
     }
-    return { qualified: false, reason: "Not qualified for lemon law." };
+    return JSON.stringify({ qualified: false, reason: "Not qualified for lemon law." });
   },
   {
     name: "lemonLawQualification",

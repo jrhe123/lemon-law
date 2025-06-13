@@ -23,7 +23,8 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 const singleAgent = async (ws: WebSocket, sessionId: string, input: string) => {
-  const base = process.env.BASE_MODEL!;
+  try {
+    const base = process.env.BASE_MODEL!;
     // 1. llm
     const chat = new ChatOpenAI({
       modelName: base,
@@ -54,8 +55,12 @@ const singleAgent = async (ws: WebSocket, sessionId: string, input: string) => {
     const chat_history = await memory.chatHistory.getMessages?.() ?? [];
     // 8. invoke
     const result = await executor.invoke({ input, chat_history, memory });
+    console.log("result", result)
     // 9. save to memory
     await memory.saveContext({ input }, { output: result.output });
+  } catch (e) {
+    console.error("error", e)
+  }
 }
 
 wss.on('connection', (ws) => {
