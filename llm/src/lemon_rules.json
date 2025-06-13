@@ -1,8 +1,7 @@
 [
   {
     "manufacturers": [
-      "Ford", "GM", "Chrysler", "Honda", "Mazda", 
-      "Mercedes Benz", "Mercedes", "Benz",
+      "Ford", "GM", "Chrysler", "Honda", "Mazda", "Mercedes Benz",
       "Mitsubishi", "Nissan", "Subaru", "Tata", "Tesla"
     ],
     "rules": [

@@ -18,7 +18,9 @@ export class MemoryClass {
       config,
     });
     const messages: BaseMessage[] = await history.getMessages();
-    if (messages.length > 10) {
+
+    // if the conversation is longer than 20 messages, summarize the conversation
+    if (messages.length >= 20) {
       const convo = messages.map(m => `${m.getType()}: ${m.content.toString()}`).join('\n');
       const summaryPrompt = new AgentPromptClass(this.memoryKey).getSummaryPrompt();
       const llm = new ChatOpenAI({
@@ -40,6 +42,8 @@ export class MemoryClass {
       await history.clear();
       await history.addMessage(new AIMessage(summaryText));
     }
+
+    // return the history
     return history;
   }
 

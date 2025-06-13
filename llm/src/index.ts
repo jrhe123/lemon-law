@@ -3,13 +3,14 @@ import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
 // v1 agent
 import { ChatOpenAI } from '@langchain/openai';
 import { createToolCallingAgent, AgentExecutor } from 'langchain/agents';
 import { AgentPromptClass } from './v1/agent-prompt';
 import { MemoryClass } from './v1/memory';
-import * as Tools from './v1/tools';
+import { lemonLawQualificationTool } from './v1/tools';
 // v2 chain
 
 // v3 graph
@@ -21,7 +22,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
-const singleAgent = async (ws: WebSocket, userId: string, input: string) => {
+const singleAgent = async (ws: WebSocket, sessionId: string, input: string) => {
   const base = process.env.BASE_MODEL!;
     // 1. llm
     const chat = new ChatOpenAI({
@@ -42,9 +43,9 @@ const singleAgent = async (ws: WebSocket, userId: string, input: string) => {
     // 2. prompt
     const prompt = new AgentPromptClass(process.env.MEMORY_KEY!).getPrompt();
     // 3. memory
-    const memory = await new MemoryClass().createMemory(userId);
+    const memory = await new MemoryClass().createMemory(sessionId);
     // 4. tools
-    const tools = Object.values(Tools);
+    const tools = [lemonLawQualificationTool];
     // 5. agent
     const agent = await createToolCallingAgent({ llm: chat, tools, prompt });
     // 6. executor
@@ -61,7 +62,13 @@ wss.on('connection', (ws) => {
   ws.on('message', async (message) => {
     try {
       const { input, userId } = JSON.parse(message.toString());
-      await singleAgent(ws, userId, input);
+      // If userId is not provided, generate a new uuid
+      const sessionId = userId || uuidv4();
+      // If sessionId was generated server-side, send it back to client
+      if (!userId) {
+        ws.send(JSON.stringify({ type: 'session', data: sessionId }));
+      }
+      await singleAgent(ws, sessionId, input);
     } catch (e) {
       ws.send(JSON.stringify({ type: 'error', data: (e as Error).message }));
     }
