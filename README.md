@@ -1,5 +1,9 @@
 # Lemon Law AI Assistant
 
+# Demo Video
+[![▶ Demo](https://img.youtube.com/vi/vm9VRkZrjUs/0.jpg)](https://www.youtube.com/watch?v=vm9VRkZrjUs)
+
+
 # Table of Contents
 
 - [How to Run](#how-to-run-the-apps)
