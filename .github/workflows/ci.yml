@@ -2,13 +2,18 @@ name: CI
 
 on:
   push:
+    branches: [ main ]
     paths:
       - 'llm/**'
       - '.github/workflows/ci.yml'
   pull_request:
+    branches: [ main ]
     paths:
       - 'llm/**'
       - '.github/workflows/ci.yml'
+      - 'web/**'
+      - 'docker-compose.yml'
+      - '.env.example'
 
 jobs:
   build-and-test:
