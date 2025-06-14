@@ -5,7 +5,7 @@ import { lemonLawQualificationTool, brandList1, brandList2 } from '../v1/tools';
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { z } from "zod";
 import 'dotenv/config';
-import { AIMessage } from '@langchain/core/messages';
+import { AIMessage, BaseMessage } from '@langchain/core/messages';
 import { RunnableSequence, RunnablePassthrough } from "@langchain/core/runnables";
 
 // prompts
@@ -96,84 +96,90 @@ const model = new ChatOpenAI({
   temperature: 0,
 });
 
+// collected information
+type CollectedInfo = {
+  manufacturer?: string;
+  repairOrders?: number;
+  repairType?: string;
+  daysOOS?: number;
+  vehicleAgeYears?: number;
+  mileage?: number;
+  withinMfrWarranty?: boolean;
+};
+
 // state annotation
 const StateAnnotation = Annotation.Root({
   ...MessagesAnnotation.spec,
   nextStep: Annotation<string>(),
-  collectedInfo: Annotation<{
-    manufacturer: string;
-    repairOrders: number;
-    repairType?: string;
-    daysOOS?: number;
-    vehicleAgeYears?: number;
-    mileage?: number;
-    withinMfrWarranty?: boolean;
-  }>(),
+  collectedInfo: Annotation<CollectedInfo>(),
   qualificationResult: Annotation<Record<string, any>>(),
 });
 
-// nodes
+// get recent conversation history
+const getRecentMessages = (messages: BaseMessage[], maxTurns: number = 10) => {
+  // ensure at least one system message
+  const systemMessages = messages.filter(msg => msg._getType() === "system");
+  const recentMessages = messages.slice(-maxTurns * 2);
+  return [...systemMessages, ...recentMessages];
+};
+
 const collectInfoNode = async (state: typeof StateAnnotation.State) => {
-  // 1. generate response
-  const response = await model.invoke([
-    { role: "system", content: COLLECT_INFO_SYSTEM_TEMPLATE },
-    ...state.messages,
-  ]);
+  try {
+    // 1. generate response
+    const response = await model.invoke([
+      { role: "system", content: COLLECT_INFO_SYSTEM_TEMPLATE },
+      ...getRecentMessages(state.messages),
+    ]);
 
-  // 2. analyze collected info
-  const analysisResponse = await model.invoke([
-    { role: "system", content: ANALYSIS_SYSTEM_TEMPLATE },
-    { role: "user", content: ANALYSIS_HUMAN_TEMPLATE + JSON.stringify(state.messages, null, 2) }
-  ], {
-    response_format: { type: "json_object" }
-  });
-
-  // 3. parse and validate the response using LCEL
-  const parser = StructuredOutputParser.fromZodSchema(
-    z.object({
-      nextStep: z.enum(["COLLECT", "ASSESS", "END"]),
-      collectedInfo: z.object({
-        manufacturer: z.string().optional(),
-        repairOrders: z.number().optional(),
-        repairType: z.string().optional(),
-        daysOOS: z.number().optional(),
-        vehicleAgeYears: z.number().optional(),
-        mileage: z.number().optional(),
-        withinMfrWarranty: z.boolean().optional(),
-      }),
-    })
-  );
-
-  const parsedOutput = await parser.parse(analysisResponse.content as string);
-
-  // 4. update state with partial information
-  type CollectedInfo = {
-    manufacturer?: string;
-    repairOrders?: number;
-    repairType?: string;
-    daysOOS?: number;
-    vehicleAgeYears?: number;
-    mileage?: number;
-    withinMfrWarranty?: boolean;
-  };
-  const updatedCollectedInfo: CollectedInfo = {
-    ...state.collectedInfo,
-  };
-
-  // update with new information, not overwrite existing information
-  if (parsedOutput.collectedInfo) {
-    Object.entries(parsedOutput.collectedInfo).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') {
-        (updatedCollectedInfo as any)[key] = value;
-      }
+    // 2. analyze collected info
+    const analysisResponse = await model.invoke([
+      { role: "system", content: ANALYSIS_SYSTEM_TEMPLATE },
+      { role: "user", content: ANALYSIS_HUMAN_TEMPLATE + JSON.stringify(getRecentMessages(state.messages), null, 2) }
+    ], {
+      response_format: { type: "json_object" }
     });
-  }
 
-  return { 
-    messages: [new AIMessage(response.content as string)],
-    nextStep: parsedOutput.nextStep,
-    collectedInfo: updatedCollectedInfo
-  };
+    // 3. parse and validate the response using LCEL
+    const parser = StructuredOutputParser.fromZodSchema(
+      z.object({
+        nextStep: z.enum(["COLLECT", "ASSESS", "END"]),
+        collectedInfo: z.object({
+          manufacturer: z.string().optional(),
+          repairOrders: z.number().optional(),
+          repairType: z.string().optional(),
+          daysOOS: z.number().optional(),
+          vehicleAgeYears: z.number().optional(),
+          mileage: z.number().optional(),
+          withinMfrWarranty: z.boolean().optional(),
+        }),
+      })
+    );
+
+    const parsedOutput = await parser.parse(analysisResponse.content as string);
+
+    // 4. update state with partial information
+    const updatedCollectedInfo: CollectedInfo = {
+      ...state.collectedInfo,
+    };
+
+    // update with new information, not overwrite existing information
+    if (parsedOutput.collectedInfo) {
+      Object.entries(parsedOutput.collectedInfo).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          (updatedCollectedInfo as any)[key] = value;
+        }
+      });
+    }
+
+    return { 
+      messages: [new AIMessage(response.content as string)],
+      nextStep: parsedOutput.nextStep,
+      collectedInfo: updatedCollectedInfo
+    };
+  } catch (error) {
+    console.error('Error in collectInfoNode:', error);
+    throw new Error(`Failed to collect information: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 };
 
 const toolNode = async (state: typeof StateAnnotation.State) => {
@@ -197,7 +203,7 @@ const toolNode = async (state: typeof StateAnnotation.State) => {
         return JSON.parse(result as string);
       } catch (error) {
         console.error('Error in lemon law qualification:', error);
-        throw new Error('Failed to process lemon law qualification');
+        throw new Error(`Failed to process lemon law qualification: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     },
     // generate assessment result response
@@ -205,7 +211,7 @@ const toolNode = async (state: typeof StateAnnotation.State) => {
       try {
         const response = await model.invoke([
           { role: "system", content: COLLECT_INFO_SYSTEM_TEMPLATE },
-          ...state.messages,
+          ...getRecentMessages(state.messages),
           { 
             role: "system", 
             content: `Based on the qualification result: ${JSON.stringify(result)}, provide a clear and helpful response to the user.`
@@ -218,7 +224,7 @@ const toolNode = async (state: typeof StateAnnotation.State) => {
         };
       } catch (error) {
         console.error('Error generating response:', error);
-        throw new Error('Failed to generate assessment response');
+        throw new Error(`Failed to generate assessment response: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     }
   ]);
@@ -250,6 +256,12 @@ builder = builder.addConditionalEdges(
 builder = builder.addEdge("tool", "__end__");
 
 const checkpointer = new MemorySaver();
-export const graph = builder.compile({
+const graph = builder.compile({
   checkpointer,
 });
+
+// console.log("\nWorkflow Graph:");
+// const graphJSON = graph.getGraph().toJSON();
+// console.log(graphJSON);
+
+export { graph };
