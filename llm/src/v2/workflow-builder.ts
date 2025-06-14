@@ -26,7 +26,7 @@ export const StateAnnotation = Annotation.Root({
   ...MessagesAnnotation.spec,
   nextStep: Annotation<string>(),
   collectedInfo: Annotation<CollectedInfo>(),
-  qualificationResult: Annotation<Record<string, any>>(),
+  qualificationResult: Annotation<Record<string, unknown>>(),
 });
 
 // build the workflow
@@ -55,19 +55,16 @@ const graph = builder.compile({
   checkpointer,
 });
 
-export const startWorkflow = async (ws: WebSocket, sessionId: string, input: string, primaryDone: boolean) => {
+export const startWorkflow = async (ws: WebSocket, sessionId: string, input: string) => {
   const eventStream = graph.streamEvents(
     { messages: [{ role: "user", content: input }] },
     { version: "v2", configurable: { thread_id: sessionId } },
   );
-  for await (const { event, data } of eventStream) {
+  for await (const { event, data, metadata } of eventStream) {
     if (event === "on_chat_model_stream" && isAIMessageChunk(data.chunk)) {
-      ws.send(JSON.stringify({ type: 'graph_step', data: data.chunk.content }));
-    }
-    if (event === "on_chat_model_end" && !primaryDone) {
-      primaryDone = true;
-      ws.send(JSON.stringify({ type: "graph_model_end" }));
-      break;
+      if (metadata["nextStep"] === "END") {
+        ws.send(JSON.stringify({ type: 'graph_step', data: data.chunk.content }));
+      }
     }
   }
   ws.send(JSON.stringify({ type: 'end' }));

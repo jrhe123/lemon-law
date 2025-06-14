@@ -25,13 +25,7 @@ const getRecentMessages = (messages: BaseMessage[], maxTurns: number = 10) => {
 
 export const collectInfoNode = async (state: typeof StateAnnotation.State) => {
   try {
-    // 1. generate response
-    const response = await model.invoke([
-      { role: "system", content: COLLECT_INFO_SYSTEM_TEMPLATE },
-      ...getRecentMessages(state.messages),
-    ]);
-
-    // 2. analyze collected info
+    // 1. analyze collected info
     const analysisResponse = await model.invoke([
       { role: "system", content: ANALYSIS_SYSTEM_TEMPLATE },
       { role: "user", content: ANALYSIS_HUMAN_TEMPLATE + JSON.stringify(getRecentMessages(state.messages), null, 2) }
@@ -39,7 +33,7 @@ export const collectInfoNode = async (state: typeof StateAnnotation.State) => {
       response_format: { type: "json_object" },
     });
 
-    // 3. parse and validate the response using LCEL
+    // 2. parse and validate the response using LCEL
     const parser = StructuredOutputParser.fromZodSchema(
       z.object({
         nextStep: z.enum(["ASSESS", "END"]),
@@ -54,27 +48,34 @@ export const collectInfoNode = async (state: typeof StateAnnotation.State) => {
         }),
       })
     );
-
     const parsedOutput = await parser.parse(analysisResponse.content as string);
 
-    // 4. update state with partial information
+    // 3. update state with partial information
     const updatedCollectedInfo: CollectedInfo = {
       ...state.collectedInfo,
     };
-
     // update with new information, not overwrite existing information
     if (parsedOutput.collectedInfo) {
       Object.entries(parsedOutput.collectedInfo).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') {
-          (updatedCollectedInfo as any)[key] = value;
+          (updatedCollectedInfo as Record<string, unknown>)[key] = value;
         }
       });
     }
 
-    console.log('response', response.content);
-    console.log('parsedOutput', parsedOutput);
-    console.log('updatedCollectedInfo', updatedCollectedInfo);
-
+    // 4. generate response
+    const response = await model.invoke(
+      [
+        { role: "system", content: COLLECT_INFO_SYSTEM_TEMPLATE },
+        ...getRecentMessages(state.messages),
+      ],
+      {
+        metadata: {
+          // indicate whether to end the workflow & websocket emit
+          nextStep: parsedOutput.nextStep,
+        }
+      }
+    );
     return { 
       messages: [new AIMessage(response.content as string)],
       nextStep: parsedOutput.nextStep,
@@ -104,7 +105,6 @@ export const toolNode = async (state: typeof StateAnnotation.State) => {
     async ({ toolInput }) => {
       try {
         const result = await lemonLawQualificationTool.invoke(toolInput);
-        console.log('tool result', result);
         return JSON.parse(result as string);
       } catch (error) {
         console.error('Error in lemon law qualification:', error);
@@ -117,11 +117,21 @@ export const toolNode = async (state: typeof StateAnnotation.State) => {
         const response = await model.invoke([
           { role: "system", content: COLLECT_INFO_SYSTEM_TEMPLATE },
           ...getRecentMessages(state.messages),
-          { 
-            role: "system", 
-            content: `Based on the qualification result: ${JSON.stringify(result)}, provide a clear and helpful response to the user.`
+          {
+            role: "system",
+            content: `You must strictly follow the following qualification result when responding to the user.
+***IMPORTANT***
+Qualification result: ${JSON.stringify(result)}
+If "qualified" is false, politely inform the user that their case does NOT qualify for lemon law protection, and explain the reason.
+If "qualified" is true, congratulate the user and explain that their case qualifies for lemon law protection.
+Do NOT contradict the qualification result. Do NOT make up any additional rules.`
+          },
+        ], {
+          metadata: {
+            // always end the workflow
+            nextStep: "END",
           }
-        ]);
+        });
         return {
           messages: [new AIMessage(response.content as string)],
           nextStep: "END",

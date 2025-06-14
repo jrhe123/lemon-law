@@ -40,7 +40,6 @@ export const startSingleAgent = async (ws: WebSocket, sessionId: string, input: 
     const chat_history = await memory.chatHistory.getMessages?.() ?? [];
     // 8. invoke
     const result = await executor.invoke({ input, chat_history, memory });
-    console.log("result", result)
     // 9. save to memory
     await memory.saveContext({ input }, { output: result.output });
   } catch (e) {

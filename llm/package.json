@@ -7,7 +7,8 @@
     "build": "tsc",
     "dev": "nodemon --watch src --ext ts,js,json --exec ts-node src/index.ts",
     "lint": "eslint . --ext .ts",
-    "test": "jest"
+    "test": "jest",
+    "lint:fix": "eslint . --ext .ts --fix"
   },
   "dependencies": {
     "@langchain/community": "^0.3.45",

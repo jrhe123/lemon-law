@@ -108,6 +108,18 @@
   </div>
 
   <script>
+    function uuidv4() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
+    window.onload = function() {
+      document.getElementById('sessionId-v1').value = uuidv4();
+      document.getElementById('sessionId-v2').value = uuidv4();
+    };
+
     function createWebSocketTest(version) {
       let ws;
       const output = document.getElementById(`output-${version}`);
@@ -135,10 +147,15 @@
               `mileage: ${document.getElementById(`mileage-${version}`).value}, ` +
               `within manufacturer warranty: ${document.getElementById(`withinMfrWarranty-${version}`).value}.`;
           }
-          
+          // sessionId 处理
+          const sessionInput = document.getElementById(`sessionId-${version}`);
+          if (!sessionInput.value) {
+            sessionInput.value = uuidv4();
+          }
+          const sessionId = sessionInput.value;
           ws.send(JSON.stringify({
             input,
-            sessionId: document.getElementById(`sessionId-${version}`).value,
+            sessionId,
             version
           }));
         };

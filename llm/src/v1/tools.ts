@@ -79,8 +79,9 @@ export const lemonLawQualificationTool = tool(
     const rulesPath = path.resolve(__dirname, "../lemon_rules.json");
     const rulesData = JSON.parse(fs.readFileSync(rulesPath, "utf-8"));
     const brand = normalizeBrand(manufacturer);
-    const group = rulesData.find((g: any) =>
-      g.manufacturers.map((m: string) => m.toLowerCase()).includes(brand.toLowerCase())
+    const group = rulesData.find((g: unknown) =>
+      (typeof g === 'object' && g !== null && Array.isArray((g as Record<string, unknown>).manufacturers)) &&
+      ((g as { manufacturers: string[] }).manufacturers.map((m: string) => m.toLowerCase()).includes(brand.toLowerCase()))
     );
     if (!group) {
       return JSON.stringify({ qualified: false, reason: `No lemon law rules found for manufacturer: ${brand}.` });
