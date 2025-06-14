@@ -1,120 +1,17 @@
-import { ChatOpenAI } from '@langchain/openai';
+import { WebSocket } from 'ws';
+
 import { Annotation, MessagesAnnotation } from "@langchain/langgraph";
-import { StateGraph, MemorySaver } from "@langchain/langgraph";
-import { lemonLawQualificationTool, brandList1, brandList2 } from '../v1/tools';
-import { StructuredOutputParser } from "@langchain/core/output_parsers";
-import { z } from "zod";
-import 'dotenv/config';
-import { AIMessage, BaseMessage } from '@langchain/core/messages';
-import { RunnableSequence, RunnablePassthrough } from "@langchain/core/runnables";
+import { StateGraph } from "@langchain/langgraph";
+import { isAIMessageChunk } from "@langchain/core/messages";
 
-// prompts
-const COLLECT_INFO_SYSTEM_TEMPLATE = `You are LemonLawBot, a professional lawyer assistant for consumers with car issues.
+// import nodes
+import { collectInfoNode, toolNode } from "./nodes";
 
-Your job is to help users determine if their car qualifies for lemon law protection by asking relevant questions and collecting all necessary information, strictly following the business logic for each manufacturer group.
-
-Always start by asking for the vehicle manufacturer. If the manufacturer is not covered by the lemon law rules, immediately inform the user that their case is not covered and do not ask further questions.
-
-If the manufacturer is valid, next ask for the number of repair orders. Then, based on the manufacturer group and repair order count, collect only the additional information required:
-
-- For manufacturers in brandList1 (${brandList1.join(", ")}):
-  - 1-2 repairs: ask for days out of service, vehicle age (years), and mileage.
-  - 3 or more repairs: ask for within manufacturer warranty status only.
-- For manufacturers in brandList2 (${brandList2.join(", ")}):
-  - 1-2 repairs: ask for repair type (must be Engine, Transmission, or Safety Concern), days out of service, vehicle age (years), and mileage.
-  - 3 repairs: ask for repair type (must be Engine, Transmission, or Safety Concern) and within manufacturer warranty status.
-  - 4 or more repairs: ask for within manufacturer warranty status only.
-
-If the user provides information out of order, use what they provide and only ask for the missing required information. Continue asking for missing required fields until you have enough information. Do not ask for unnecessary information.
-
-Only cases that match the defined rules are valid. If the user's situation does not match any rule, politely inform them that their case is not covered by the lemon law.
-
-Always be friendly, professional, and helpful.
-
-If the user is unsure or information is missing, ask clarifying questions to collect all required details.`;
-
-const ANALYSIS_SYSTEM_TEMPLATE = `You are an expert at analyzing lemon law assessment conversations.
-Your job is to determine if we have collected enough information to make a qualification assessment.
-
-You must analyze the conversation and extract all relevant information about the user's vehicle case.
-Pay special attention to:
-
-1. Manufacturer validation:
-   - Check if the manufacturer is in brandList1 (${brandList1.join(", ")})
-   - Check if the manufacturer is in brandList2 (${brandList2.join(", ")})
-   - If not in either list, return "END" immediately
-
-2. Required information based on manufacturer group and repair count:
-   For brandList1 manufacturers:
-   - 1-2 repairs: need days out of service, vehicle age (years), and mileage
-   - 3 or more repairs: need within manufacturer warranty status only
-
-   For brandList2 manufacturers:
-   - 1-2 repairs: need repair type (must be Engine, Transmission, or Safety Concern), days out of service, vehicle age (years), and mileage
-   - 3 repairs: need repair type (must be Engine, Transmission, or Safety Concern) and within manufacturer warranty status
-   - 4 or more repairs: need within manufacturer warranty status only
-
-3. Data type validation for each field:
-   - manufacturer: string
-   - repairOrders: number
-   - repairType: string (only for brandList2)
-   - daysOOS: number
-   - vehicleAgeYears: number
-   - mileage: number
-   - withinMfrWarranty: boolean
-
-4. Next step determination:
-   - Return "END" if:
-     * manufacturer is not in either brandList1 or brandList2
-     * manufacturer is missing
-     * repairOrders is missing
-     * ANY required additional information is missing
-   - Return "ASSESS" ONLY if ALL required information is collected based on manufacturer group and repair count
-
-Example response format:
-{
-  "nextStep": "END",
-  "collectedInfo": {
-    "manufacturer": "Toyota",
-    "repairOrders": 2,
-    "repairType": "Engine",
-    "daysOOS": 15,
-    "vehicleAgeYears": 1,
-    "mileage": 12000,
-    "withinMfrWarranty": true
-  }
-}
-
-Note: Only include fields that have been collected in the conversation. If a field is not mentioned or unclear, omit it from the response.`;
-
-const ANALYSIS_HUMAN_TEMPLATE = `Please analyze the conversation and determine if we have collected enough information for a lemon law assessment.
-
-Please provide your analysis in JSON format with the following structure:
-{
-  "nextStep": "ASSESS" | "END",
-  "collectedInfo": {
-    "manufacturer": string,
-    "repairOrders": number,
-    "repairType": string,
-    "daysOOS": number,
-    "vehicleAgeYears": number,
-    "mileage": number,
-    "withinMfrWarranty": boolean
-  }
-}
-
-Here is the conversation:
-`;
-
-// basic model
-const model = new ChatOpenAI({
-  model: process.env.BASE_MODEL!,
-  streaming: true,
-  temperature: 0,
-});
+// import memory
+import { checkpointer } from "./memory";
 
 // collected information
-type CollectedInfo = {
+export type CollectedInfo = {
   manufacturer?: string;
   repairOrders?: number;
   repairType?: string;
@@ -124,135 +21,13 @@ type CollectedInfo = {
   withinMfrWarranty?: boolean;
 };
 
-// state annotation
-const StateAnnotation = Annotation.Root({
+// define state annotation
+export const StateAnnotation = Annotation.Root({
   ...MessagesAnnotation.spec,
   nextStep: Annotation<string>(),
   collectedInfo: Annotation<CollectedInfo>(),
   qualificationResult: Annotation<Record<string, any>>(),
 });
-
-// get recent conversation history
-const getRecentMessages = (messages: BaseMessage[], maxTurns: number = 10) => {
-  // ensure at least one system message
-  const systemMessages = messages.filter(msg => msg._getType() === "system");
-  const recentMessages = messages.slice(-maxTurns * 2);
-  return [...systemMessages, ...recentMessages];
-};
-
-const collectInfoNode = async (state: typeof StateAnnotation.State) => {
-  try {
-    // 1. generate response
-    const response = await model.invoke([
-      { role: "system", content: COLLECT_INFO_SYSTEM_TEMPLATE },
-      ...getRecentMessages(state.messages),
-    ]);
-
-    // 2. analyze collected info
-    const analysisResponse = await model.invoke([
-      { role: "system", content: ANALYSIS_SYSTEM_TEMPLATE },
-      { role: "user", content: ANALYSIS_HUMAN_TEMPLATE + JSON.stringify(getRecentMessages(state.messages), null, 2) }
-    ], {
-      response_format: { type: "json_object" },
-    });
-
-    // 3. parse and validate the response using LCEL
-    const parser = StructuredOutputParser.fromZodSchema(
-      z.object({
-        nextStep: z.enum(["ASSESS", "END"]),
-        collectedInfo: z.object({
-          manufacturer: z.string().optional(),
-          repairOrders: z.number().optional(),
-          repairType: z.string().optional(),
-          daysOOS: z.number().optional(),
-          vehicleAgeYears: z.number().optional(),
-          mileage: z.number().optional(),
-          withinMfrWarranty: z.boolean().optional(),
-        }),
-      })
-    );
-
-    const parsedOutput = await parser.parse(analysisResponse.content as string);
-
-    // 4. update state with partial information
-    const updatedCollectedInfo: CollectedInfo = {
-      ...state.collectedInfo,
-    };
-
-    // update with new information, not overwrite existing information
-    if (parsedOutput.collectedInfo) {
-      Object.entries(parsedOutput.collectedInfo).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-          (updatedCollectedInfo as any)[key] = value;
-        }
-      });
-    }
-
-    console.log('response', response.content);
-    console.log('parsedOutput', parsedOutput);
-    console.log('updatedCollectedInfo', updatedCollectedInfo);
-
-    return { 
-      messages: [new AIMessage(response.content as string)],
-      nextStep: parsedOutput.nextStep,
-      collectedInfo: updatedCollectedInfo
-    };
-  } catch (error) {
-    console.error('Error in collectInfoNode:', error);
-    throw new Error(`Failed to collect information: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-};
-
-const toolNode = async (state: typeof StateAnnotation.State) => {
-  const chain = RunnableSequence.from([
-    // prepare tool input
-    RunnablePassthrough.assign({
-      toolInput: () => ({
-        manufacturer: state.collectedInfo.manufacturer as string,
-        repairOrders: state.collectedInfo.repairOrders as number,
-        repairType: state.collectedInfo.repairType as string | undefined,
-        daysOOS: state.collectedInfo.daysOOS as number | undefined,
-        vehicleAgeYears: state.collectedInfo.vehicleAgeYears as number | undefined,
-        mileage: state.collectedInfo.mileage as number | undefined,
-        withinMfrWarranty: state.collectedInfo.withinMfrWarranty as boolean | undefined,
-      })
-    }),
-    // call lemon law qualification tool
-    async ({ toolInput }) => {
-      try {
-        const result = await lemonLawQualificationTool.invoke(toolInput);
-        console.log('tool result', result);
-        return JSON.parse(result as string);
-      } catch (error) {
-        console.error('Error in lemon law qualification:', error);
-        throw new Error(`Failed to process lemon law qualification: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    },
-    // generate assessment result response
-    async (result) => {
-      try {
-        const response = await model.invoke([
-          { role: "system", content: COLLECT_INFO_SYSTEM_TEMPLATE },
-          ...getRecentMessages(state.messages),
-          { 
-            role: "system", 
-            content: `Based on the qualification result: ${JSON.stringify(result)}, provide a clear and helpful response to the user.`
-          }
-        ]);
-        return {
-          messages: [new AIMessage(response.content as string)],
-          nextStep: "END",
-          qualificationResult: result
-        };
-      } catch (error) {
-        console.error('Error generating response:', error);
-        throw new Error(`Failed to generate assessment response: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    }
-  ]);
-
-  return chain.invoke({});
-};
 
 // build the workflow
 let builder = new StateGraph(StateAnnotation)
@@ -276,14 +51,28 @@ builder = builder.addConditionalEdges(
 );
 
 builder = builder.addEdge("tool", "__end__");
-
-const checkpointer = new MemorySaver();
 const graph = builder.compile({
   checkpointer,
 });
 
+export const startWorkflow = async (ws: WebSocket, sessionId: string, input: string, primaryDone: boolean) => {
+  const eventStream = graph.streamEvents(
+    { messages: [{ role: "user", content: input }] },
+    { version: "v2", configurable: { thread_id: sessionId } },
+  );
+  for await (const { event, data } of eventStream) {
+    if (event === "on_chat_model_stream" && isAIMessageChunk(data.chunk)) {
+      ws.send(JSON.stringify({ type: 'graph_step', data: data.chunk.content }));
+    }
+    if (event === "on_chat_model_end" && !primaryDone) {
+      primaryDone = true;
+      ws.send(JSON.stringify({ type: "graph_model_end" }));
+      break;
+    }
+  }
+  ws.send(JSON.stringify({ type: 'end' }));
+}
+
 // console.log("\nWorkflow Graph:");
 // const graphJSON = graph.getGraph().toJSON();
 // console.log(graphJSON);
-
-export { graph };
