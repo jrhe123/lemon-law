@@ -16,6 +16,9 @@
 ### **BE**
 
 ```bash
+  # llm folder
+  cd llm
+
   # Create .env file
   cp .env.example .env
   
