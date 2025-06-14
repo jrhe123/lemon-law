@@ -66,6 +66,7 @@ const singleAgent = async (ws: WebSocket, sessionId: string, input: string) => {
 wss.on('connection', (ws) => {
   ws.on('message', async (message) => {
     try {
+      let primaryDone = false;
       const { input, sessionId, version } = JSON.parse(message.toString());
       if (version === 'v2') {
         // v2: langgraph workflow
@@ -75,7 +76,13 @@ wss.on('connection', (ws) => {
         );
         for await (const { event, data } of eventStream) {
           if (event === "on_chat_model_stream" && isAIMessageChunk(data.chunk)) {
+            console.log('data.chunk', data.chunk);
             ws.send(JSON.stringify({ type: 'graph_step', data: data.chunk.content }));
+          }
+          if (event === "on_chat_model_end" && !primaryDone) {
+            primaryDone = true;
+            ws.send(JSON.stringify({ type: "graph_model_end" }));
+            break;
           }
         }
         ws.send(JSON.stringify({ type: 'end' }));

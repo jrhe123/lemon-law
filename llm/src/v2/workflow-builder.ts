@@ -42,7 +42,7 @@ Pay special attention to:
 1. Manufacturer validation:
    - Check if the manufacturer is in brandList1 (${brandList1.join(", ")})
    - Check if the manufacturer is in brandList2 (${brandList2.join(", ")})
-   - If not in either list, mark as invalid manufacturer
+   - If not in either list, return "END" immediately
 
 2. Required information based on manufacturer group and repair count:
    For brandList1 manufacturers:
@@ -64,13 +64,16 @@ Pay special attention to:
    - withinMfrWarranty: boolean
 
 4. Next step determination:
-   - If manufacturer is invalid: return "END"
-   - If all required information is collected: return "ASSESS"
-   - If missing required information: return "COLLECT"
+   - Return "END" if:
+     * manufacturer is not in either brandList1 or brandList2
+     * manufacturer is missing
+     * repairOrders is missing
+     * ANY required additional information is missing
+   - Return "ASSESS" ONLY if ALL required information is collected based on manufacturer group and repair count
 
 Example response format:
 {
-  "nextStep": "COLLECT",
+  "nextStep": "END",
   "collectedInfo": {
     "manufacturer": "Toyota",
     "repairOrders": 2,
@@ -85,6 +88,20 @@ Example response format:
 Note: Only include fields that have been collected in the conversation. If a field is not mentioned or unclear, omit it from the response.`;
 
 const ANALYSIS_HUMAN_TEMPLATE = `Please analyze the conversation and determine if we have collected enough information for a lemon law assessment.
+
+Please provide your analysis in JSON format with the following structure:
+{
+  "nextStep": "ASSESS" | "END",
+  "collectedInfo": {
+    "manufacturer": string,
+    "repairOrders": number,
+    "repairType": string,
+    "daysOOS": number,
+    "vehicleAgeYears": number,
+    "mileage": number,
+    "withinMfrWarranty": boolean
+  }
+}
 
 Here is the conversation:
 `;
@@ -136,13 +153,13 @@ const collectInfoNode = async (state: typeof StateAnnotation.State) => {
       { role: "system", content: ANALYSIS_SYSTEM_TEMPLATE },
       { role: "user", content: ANALYSIS_HUMAN_TEMPLATE + JSON.stringify(getRecentMessages(state.messages), null, 2) }
     ], {
-      response_format: { type: "json_object" }
+      response_format: { type: "json_object" },
     });
 
     // 3. parse and validate the response using LCEL
     const parser = StructuredOutputParser.fromZodSchema(
       z.object({
-        nextStep: z.enum(["COLLECT", "ASSESS", "END"]),
+        nextStep: z.enum(["ASSESS", "END"]),
         collectedInfo: z.object({
           manufacturer: z.string().optional(),
           repairOrders: z.number().optional(),
@@ -170,6 +187,10 @@ const collectInfoNode = async (state: typeof StateAnnotation.State) => {
         }
       });
     }
+
+    console.log('response', response.content);
+    console.log('parsedOutput', parsedOutput);
+    console.log('updatedCollectedInfo', updatedCollectedInfo);
 
     return { 
       messages: [new AIMessage(response.content as string)],
@@ -200,6 +221,7 @@ const toolNode = async (state: typeof StateAnnotation.State) => {
     async ({ toolInput }) => {
       try {
         const result = await lemonLawQualificationTool.invoke(toolInput);
+        console.log('tool result', result);
         return JSON.parse(result as string);
       } catch (error) {
         console.error('Error in lemon law qualification:', error);
@@ -244,12 +266,12 @@ builder = builder.addConditionalEdges(
     if (state.nextStep === "ASSESS") {
       return "tool";
     } else {
-      return "collect_info";
+      return "__end__";
     }
   },
   {
     tool: "tool",
-    collect_info: "collect_info"
+    '__end__': "__end__",
   }
 );
 
