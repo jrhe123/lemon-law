@@ -5,148 +5,181 @@
   <title>Lemon Law WebSocket Agent Test</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 2em; }
-    #output { white-space: pre-wrap; border: 1px solid #ccc; padding: 1em; min-height: 100px; }
-    #status { color: green; }
-    label { display: block; margin-top: 0.5em; }
+    .test-section { 
+      border: 1px solid #ddd; 
+      padding: 1em; 
+      margin-bottom: 1em; 
+      border-radius: 4px;
+    }
+    .test-section h3 {
+      margin-top: 0;
+      color: #333;
+    }
+    #output-v1, #output-v2 { 
+      white-space: pre-wrap; 
+      border: 1px solid #ccc; 
+      padding: 1em; 
+      min-height: 100px; 
+      margin-top: 1em;
+    }
+    #status-v1, #status-v2 { 
+      color: green; 
+      margin: 0.5em 0;
+    }
+    label { 
+      display: block; 
+      margin-top: 0.5em; 
+    }
+    .input-group {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1em;
+    }
+    .custom-input {
+      margin-top: 1em;
+    }
+    textarea {
+      width: 100%;
+      margin-top: 0.5em;
+    }
   </style>
 </head>
 <body>
   <h2>Lemon Law WebSocket Agent Test</h2>
-  <div>
-    <label>Manufacturer: <input id="manufacturer" value="Ford"></label>
-    <label>Number of Repair Orders: <input id="repairOrders" type="number" value="2"></label>
-    <label>Repair Type: <input id="repairType" value="Any"></label>
-    <label>Days Out of Service: <input id="daysOOS" type="number" value="35"></label>
-    <label>Vehicle Age (years): <input id="vehicleAgeYears" type="number" value="1"></label>
-    <label>Mileage: <input id="mileage" type="number" value="15000"></label>
-    <label>Within Manufacturer Warranty: 
-      <select id="withinMfrWarranty">
-        <option value="true">Yes</option>
-        <option value="false">No</option>
-      </select>
-    </label>
-    <label>Session ID: <input id="sessionId" value="s1" style="width: 100px;"></label>
-    <label>Agent Version:
-      <select id="agentVersion">
-        <option value="v1">v1</option>
-        <option value="v2" selected>v2</option>
-      </select>
-    </label>
-    <button id="send">Send</button>
+  
+  <!-- V1 Test Section -->
+  <div class="test-section">
+    <h3>V1 Agent Test</h3>
+    <div class="input-group">
+      <div>
+        <label>Manufacturer: <input id="manufacturer-v1" value="Ford"></label>
+        <label>Number of Repair Orders: <input id="repairOrders-v1" type="number" value="2"></label>
+        <label>Repair Type: <input id="repairType-v1" value="Any"></label>
+        <label>Days Out of Service: <input id="daysOOS-v1" type="number" value="35"></label>
+        <label>Vehicle Age (years): <input id="vehicleAgeYears-v1" type="number" value="1"></label>
+        <label>Mileage: <input id="mileage-v1" type="number" value="15000"></label>
+        <label>Within Manufacturer Warranty: 
+          <select id="withinMfrWarranty-v1">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </label>
+        <label>Session ID: <input id="sessionId-v1" value="s1" style="width: 100px;"></label>
+        <button id="send-v1">Send</button>
+      </div>
+      <div class="custom-input">
+        <label>Or enter your own input:</label>
+        <textarea id="customInput-v1" rows="3" placeholder="Type your own input here..."></textarea>
+        <button id="sendCustom-v1">Send (use custom input)</button>
+      </div>
+    </div>
+    <div id="status-v1"></div>
+    <div id="output-v1"></div>
   </div>
-  <div>
-    <label>Or enter your own input:</label>
-    <textarea id="customInput" rows="3" placeholder="Type your own input here..." style="width:100%;margin-top:0.5em;"></textarea>
-    <button id="sendCustom">Send (use custom input)</button>
+
+  <!-- V2 Test Section -->
+  <div class="test-section">
+    <h3>V2 Agent Test</h3>
+    <div class="input-group">
+      <div>
+        <label>Manufacturer: <input id="manufacturer-v2" value="Ford"></label>
+        <label>Number of Repair Orders: <input id="repairOrders-v2" type="number" value="2"></label>
+        <label>Repair Type: <input id="repairType-v2" value="Any"></label>
+        <label>Days Out of Service: <input id="daysOOS-v2" type="number" value="35"></label>
+        <label>Vehicle Age (years): <input id="vehicleAgeYears-v2" type="number" value="1"></label>
+        <label>Mileage: <input id="mileage-v2" type="number" value="15000"></label>
+        <label>Within Manufacturer Warranty: 
+          <select id="withinMfrWarranty-v2">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </label>
+        <label>Session ID: <input id="sessionId-v2" value="s2" style="width: 100px;"></label>
+        <button id="send-v2">Send</button>
+      </div>
+      <div class="custom-input">
+        <label>Or enter your own input:</label>
+        <textarea id="customInput-v2" rows="3" placeholder="Type your own input here..."></textarea>
+        <button id="sendCustom-v2">Send (use custom input)</button>
+      </div>
+    </div>
+    <div id="status-v2"></div>
+    <div id="output-v2"></div>
   </div>
-  <div id="status"></div>
-  <h3>Agent Output:</h3>
-  <div id="output"></div>
+
   <script>
-    let ws;
-    const output = document.getElementById('output');
-    const status = document.getElementById('status');
-    let lastGraphStep = null;
-    document.getElementById('send').onclick = function() {
-      output.textContent = '';
-      status.textContent = 'Connecting...';
-      lastGraphStep = null;
-      ws = new WebSocket('ws://' + location.hostname + ':3000');
-      ws.onopen = () => {
-        status.textContent = 'Connected.';
-        // Build lemon law related input
-        const input = 
-          `My car is a ${document.getElementById('manufacturer').value}, ` +
-          `with ${document.getElementById('repairOrders').value} repairs, ` +
-          `repair type: ${document.getElementById('repairType').value}, ` +
-          `out of service for ${document.getElementById('daysOOS').value} days, ` +
-          `vehicle age: ${document.getElementById('vehicleAgeYears').value} years, ` +
-          `mileage: ${document.getElementById('mileage').value}, ` +
-          `within manufacturer warranty: ${document.getElementById('withinMfrWarranty').value}.`;
-        const version = document.getElementById('agentVersion').value;
-        ws.send(JSON.stringify({
-          input,
-          sessionId: document.getElementById('sessionId').value,
-          version
-        }));
-      };
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'token') {
-          output.textContent += msg.data;
-        } else if (msg.type === 'graph_step') {
-          lastGraphStep = msg.data;
-        } else if (msg.type === 'end') {
-          status.textContent = 'Done.';
-          if (lastGraphStep) {
-            if (lastGraphStep.messages) {
-              if (Array.isArray(lastGraphStep.messages)) {
-                const lastMsg = lastGraphStep.messages.at(-1);
-                output.textContent = lastMsg?.content || JSON.stringify(lastGraphStep);
-              } else {
-                output.textContent = lastGraphStep.messages.content || JSON.stringify(lastGraphStep);
-              }
-            } else {
-              output.textContent = JSON.stringify(lastGraphStep);
+    function createWebSocketTest(version) {
+      let ws;
+      const output = document.getElementById(`output-${version}`);
+      const status = document.getElementById(`status-${version}`);
+      let lastGraphStep = null;
+
+      function sendMessage(useCustomInput = false) {
+        output.textContent = '';
+        status.textContent = 'Connecting...';
+        lastGraphStep = null;
+        ws = new WebSocket('ws://' + location.hostname + ':3000');
+        
+        ws.onopen = () => {
+          status.textContent = 'Connected.';
+          let input;
+          if (useCustomInput) {
+            input = document.getElementById(`customInput-${version}`).value;
+          } else {
+            input = 
+              `My car is a ${document.getElementById(`manufacturer-${version}`).value}, ` +
+              `with ${document.getElementById(`repairOrders-${version}`).value} repairs, ` +
+              `repair type: ${document.getElementById(`repairType-${version}`).value}, ` +
+              `out of service for ${document.getElementById(`daysOOS-${version}`).value} days, ` +
+              `vehicle age: ${document.getElementById(`vehicleAgeYears-${version}`).value} years, ` +
+              `mileage: ${document.getElementById(`mileage-${version}`).value}, ` +
+              `within manufacturer warranty: ${document.getElementById(`withinMfrWarranty-${version}`).value}.`;
+          }
+          
+          ws.send(JSON.stringify({
+            input,
+            sessionId: document.getElementById(`sessionId-${version}`).value,
+            version
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+          if (version === 'v1') {
+            if (msg.type === 'token') {
+              output.textContent += msg.data;
+            } else if (msg.type === 'end') {
+              status.textContent = 'Done.';
+            } else if (msg.type === 'error') {
+              status.textContent = 'Error: ' + msg.data;
+            }
+          } else {
+            if (msg.type === 'graph_step') {
+              output.textContent += msg.data;
+            } else if (msg.type === 'end') {
+              status.textContent = 'Done.';
+            } else if (msg.type === 'error') {
+              status.textContent = 'Error: ' + msg.data;
             }
           }
-        } else if (msg.type === 'error') {
-          status.textContent = 'Error: ' + msg.data;
-        }
-      };
-      ws.onerror = (e) => {
-        status.textContent = 'WebSocket error.';
-      };
-      ws.onclose = () => {
-        status.textContent += ' (Connection closed)';
-      };
-    };
-    document.getElementById('sendCustom').onclick = function() {
-      output.textContent = '';
-      status.textContent = 'Connecting...';
-      lastGraphStep = null;
-      ws = new WebSocket('ws://' + location.hostname + ':3000');
-      ws.onopen = () => {
-        status.textContent = 'Connected.';
-        const input = document.getElementById('customInput').value;
-        const version = document.getElementById('agentVersion').value;
-        ws.send(JSON.stringify({
-          input,
-          sessionId: document.getElementById('sessionId').value,
-          version
-        }));
-      };
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'token') {
-          output.textContent += msg.data;
-        } else if (msg.type === 'graph_step') {
-          lastGraphStep = msg.data;
-        } else if (msg.type === 'end') {
-          status.textContent = 'Done.';
-          if (lastGraphStep) {
-            if (lastGraphStep.messages) {
-              if (Array.isArray(lastGraphStep.messages)) {
-                const lastMsg = lastGraphStep.messages.at(-1);
-                output.textContent = lastMsg?.content || JSON.stringify(lastGraphStep);
-              } else {
-                output.textContent = lastGraphStep.messages.content || JSON.stringify(lastGraphStep);
-              }
-            } else {
-              output.textContent = JSON.stringify(lastGraphStep);
-            }
-          }
-        } else if (msg.type === 'error') {
-          status.textContent = 'Error: ' + msg.data;
-        }
-      };
-      ws.onerror = (e) => {
-        status.textContent = 'WebSocket error.';
-      };
-      ws.onclose = () => {
-        status.textContent += ' (Connection closed)';
-      };
-    };
+        };
+
+        ws.onerror = (e) => {
+          status.textContent = 'WebSocket error.';
+        };
+
+        ws.onclose = () => {
+          status.textContent += ' (Connection closed)';
+        };
+      }
+
+      document.getElementById(`send-${version}`).onclick = () => sendMessage(false);
+      document.getElementById(`sendCustom-${version}`).onclick = () => sendMessage(true);
+    }
+
+    // Initialize both versions
+    createWebSocketTest('v1');
+    createWebSocketTest('v2');
   </script>
 </body>
 </html>
