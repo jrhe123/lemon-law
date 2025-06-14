@@ -4,16 +4,16 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 
-// v1 agent
+// v1 agent (evaluator with langsmith)
 import { ChatOpenAI } from '@langchain/openai';
 import { createToolCallingAgent, AgentExecutor } from 'langchain/agents';
 import { AgentPromptClass } from './v1/agent-prompt';
 import { MemoryClass } from './v1/memory';
 import { lemonLawQualificationTool } from './v1/tools';
 
-// v2 chain
-
-// v3 graph
+// v2 agent workflow
+import { graph } from './v2/workflow-builder';
+import { isAIMessageChunk } from "@langchain/core/messages";
 
 const app = express();
 app.use(express.json());
@@ -24,10 +24,9 @@ const wss = new WebSocketServer({ server });
 
 const singleAgent = async (ws: WebSocket, sessionId: string, input: string) => {
   try {
-    const base = process.env.BASE_MODEL!;
     // 1. llm
     const chat = new ChatOpenAI({
-      modelName: base,
+      modelName: process.env.BASE_MODEL!,
       streaming: true,
       callbacks: [{
         handleLLMNewToken(token: string) {
@@ -39,7 +38,8 @@ const singleAgent = async (ws: WebSocket, sessionId: string, input: string) => {
         handleLLMError(e: Error) {
           ws.send(JSON.stringify({ type: 'error', data: e.message }));
         }
-      }]
+      }],
+      temperature: 0.0,
     });
     // 2. prompt
     const prompt = new AgentPromptClass(process.env.MEMORY_KEY!).getPrompt();
@@ -66,8 +66,23 @@ const singleAgent = async (ws: WebSocket, sessionId: string, input: string) => {
 wss.on('connection', (ws) => {
   ws.on('message', async (message) => {
     try {
-      const { input, sessionId } = JSON.parse(message.toString());
-      await singleAgent(ws, sessionId, input);
+      const { input, sessionId, version } = JSON.parse(message.toString());
+      if (version === 'v2') {
+        // v2: langgraph workflow
+        const eventStream = graph.streamEvents(
+          { messages: [{ role: "user", content: input }] },
+          { version: "v2", configurable: { thread_id: sessionId } },
+        );
+        for await (const { event, data } of eventStream) {
+          if (event === "on_chat_model_stream" && isAIMessageChunk(data.chunk)) {
+            ws.send(JSON.stringify({ type: 'graph_step', data: data.chunk.content }));
+          }
+        }
+        ws.send(JSON.stringify({ type: 'end' }));
+      } else {
+        // v1: single agent
+        await singleAgent(ws, sessionId, input);
+      }
     } catch (e) {
       ws.send(JSON.stringify({ type: 'error', data: (e as Error).message }));
     }

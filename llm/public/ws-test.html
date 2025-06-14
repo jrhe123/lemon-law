@@ -26,6 +26,12 @@
       </select>
     </label>
     <label>Session ID: <input id="sessionId" value="s1" style="width: 100px;"></label>
+    <label>Agent Version:
+      <select id="agentVersion">
+        <option value="v1">v1</option>
+        <option value="v2" selected>v2</option>
+      </select>
+    </label>
     <button id="send">Send</button>
   </div>
   <div>
@@ -40,9 +46,11 @@
     let ws;
     const output = document.getElementById('output');
     const status = document.getElementById('status');
+    let lastGraphStep = null;
     document.getElementById('send').onclick = function() {
       output.textContent = '';
       status.textContent = 'Connecting...';
+      lastGraphStep = null;
       ws = new WebSocket('ws://' + location.hostname + ':3000');
       ws.onopen = () => {
         status.textContent = 'Connected.';
@@ -55,17 +63,33 @@
           `vehicle age: ${document.getElementById('vehicleAgeYears').value} years, ` +
           `mileage: ${document.getElementById('mileage').value}, ` +
           `within manufacturer warranty: ${document.getElementById('withinMfrWarranty').value}.`;
+        const version = document.getElementById('agentVersion').value;
         ws.send(JSON.stringify({
           input,
-          sessionId: document.getElementById('sessionId').value
+          sessionId: document.getElementById('sessionId').value,
+          version
         }));
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         if (msg.type === 'token') {
           output.textContent += msg.data;
+        } else if (msg.type === 'graph_step') {
+          lastGraphStep = msg.data;
         } else if (msg.type === 'end') {
           status.textContent = 'Done.';
+          if (lastGraphStep) {
+            if (lastGraphStep.messages) {
+              if (Array.isArray(lastGraphStep.messages)) {
+                const lastMsg = lastGraphStep.messages.at(-1);
+                output.textContent = lastMsg?.content || JSON.stringify(lastGraphStep);
+              } else {
+                output.textContent = lastGraphStep.messages.content || JSON.stringify(lastGraphStep);
+              }
+            } else {
+              output.textContent = JSON.stringify(lastGraphStep);
+            }
+          }
         } else if (msg.type === 'error') {
           status.textContent = 'Error: ' + msg.data;
         }
@@ -80,21 +104,38 @@
     document.getElementById('sendCustom').onclick = function() {
       output.textContent = '';
       status.textContent = 'Connecting...';
+      lastGraphStep = null;
       ws = new WebSocket('ws://' + location.hostname + ':3000');
       ws.onopen = () => {
         status.textContent = 'Connected.';
         const input = document.getElementById('customInput').value;
+        const version = document.getElementById('agentVersion').value;
         ws.send(JSON.stringify({
           input,
-          sessionId: document.getElementById('sessionId').value
+          sessionId: document.getElementById('sessionId').value,
+          version
         }));
       };
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         if (msg.type === 'token') {
           output.textContent += msg.data;
+        } else if (msg.type === 'graph_step') {
+          lastGraphStep = msg.data;
         } else if (msg.type === 'end') {
           status.textContent = 'Done.';
+          if (lastGraphStep) {
+            if (lastGraphStep.messages) {
+              if (Array.isArray(lastGraphStep.messages)) {
+                const lastMsg = lastGraphStep.messages.at(-1);
+                output.textContent = lastMsg?.content || JSON.stringify(lastGraphStep);
+              } else {
+                output.textContent = lastGraphStep.messages.content || JSON.stringify(lastGraphStep);
+              }
+            } else {
+              output.textContent = JSON.stringify(lastGraphStep);
+            }
+          }
         } else if (msg.type === 'error') {
           status.textContent = 'Error: ' + msg.data;
         }
