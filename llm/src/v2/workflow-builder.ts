@@ -5,6 +5,7 @@ import { lemonLawQualificationTool, brandList1, brandList2 } from '../v1/tools';
 import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { z } from "zod";
 import 'dotenv/config';
+import { AIMessage } from '@langchain/core/messages';
 
 // prompts
 const COLLECT_INFO_SYSTEM_TEMPLATE = `You are LemonLawBot, a professional lawyer assistant for consumers with car issues.
@@ -36,22 +37,53 @@ Your job is to determine if we have collected enough information to make a quali
 
 You must analyze the conversation and extract all relevant information about the user's vehicle case.
 Pay special attention to:
-1. Manufacturer validation
-2. Repair order count
-3. Additional required information based on manufacturer group and repair count
-4. Data type validation for each field`;
 
-const ANALYSIS_HUMAN_TEMPLATE = `Based on the conversation history, determine if we have enough information.
-We need at minimum:
-- manufacturer (string)
-- repairOrders (number)
+1. Manufacturer validation:
+   - Check if the manufacturer is in brandList1 (${brandList1.join(", ")})
+   - Check if the manufacturer is in brandList2 (${brandList2.join(", ")})
+   - If not in either list, mark as invalid manufacturer
 
-And depending on the manufacturer group, we may also need:
-- repairType (string, for brandList2)
-- daysOOS (number)
-- vehicleAgeYears (number)
-- mileage (number)
-- withinMfrWarranty (boolean)
+2. Required information based on manufacturer group and repair count:
+   For brandList1 manufacturers:
+   - 1-2 repairs: need days out of service, vehicle age (years), and mileage
+   - 3 or more repairs: need within manufacturer warranty status only
+
+   For brandList2 manufacturers:
+   - 1-2 repairs: need repair type (must be Engine, Transmission, or Safety Concern), days out of service, vehicle age (years), and mileage
+   - 3 repairs: need repair type (must be Engine, Transmission, or Safety Concern) and within manufacturer warranty status
+   - 4 or more repairs: need within manufacturer warranty status only
+
+3. Data type validation for each field:
+   - manufacturer: string
+   - repairOrders: number
+   - repairType: string (only for brandList2)
+   - daysOOS: number
+   - vehicleAgeYears: number
+   - mileage: number
+   - withinMfrWarranty: boolean
+
+4. Next step determination:
+   - If manufacturer is invalid: return "END"
+   - If all required information is collected: return "ASSESS"
+   - If missing required information: return "COLLECT"
+
+Example response format:
+{
+  "nextStep": "COLLECT",
+  "collectedInfo": {
+    "manufacturer": "Toyota",
+    "repairOrders": 2,
+    "repairType": "Engine",
+    "daysOOS": 15,
+    "vehicleAgeYears": 1,
+    "mileage": 12000,
+    "withinMfrWarranty": true
+  }
+}
+
+Note: Only include fields that have been collected in the conversation. If a field is not mentioned or unclear, omit it from the response.`;
+
+const ANALYSIS_HUMAN_TEMPLATE = `Please analyze the conversation and determine if we have collected enough information for a lemon law assessment.
 
 Here is the conversation:
 `;
@@ -98,10 +130,10 @@ const collectInfoNode = async (state: typeof StateAnnotation.State) => {
   // 3. parse and validate the response using LCEL
   const parser = StructuredOutputParser.fromZodSchema(
     z.object({
-      nextStep: z.enum(["COLLECT", "ASSESS"]),
+      nextStep: z.enum(["COLLECT", "ASSESS", "END"]),
       collectedInfo: z.object({
-        manufacturer: z.string(),
-        repairOrders: z.number(),
+        manufacturer: z.string().optional(),
+        repairOrders: z.number().optional(),
         repairType: z.string().optional(),
         daysOOS: z.number().optional(),
         vehicleAgeYears: z.number().optional(),
@@ -113,14 +145,33 @@ const collectInfoNode = async (state: typeof StateAnnotation.State) => {
 
   const parsedOutput = await parser.parse(analysisResponse.content as string);
 
-  // 4. update state
+  // 4. update state with partial information
+  type CollectedInfo = {
+    manufacturer?: string;
+    repairOrders?: number;
+    repairType?: string;
+    daysOOS?: number;
+    vehicleAgeYears?: number;
+    mileage?: number;
+    withinMfrWarranty?: boolean;
+  };
+  const updatedCollectedInfo: CollectedInfo = {
+    ...state.collectedInfo,
+  };
+
+  // update with new information, not overwrite existing information
+  if (parsedOutput.collectedInfo) {
+    Object.entries(parsedOutput.collectedInfo).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        (updatedCollectedInfo as any)[key] = value;
+      }
+    });
+  }
+
   return { 
-    messages: [response],
+    messages: [new AIMessage(response.content as string)],
     nextStep: parsedOutput.nextStep,
-    collectedInfo: {
-      ...state.collectedInfo,  // 保留已有信息
-      ...parsedOutput.collectedInfo  // 更新新收集的信息
-    }
+    collectedInfo: updatedCollectedInfo
   };
 };
 
