@@ -6,6 +6,7 @@ import { StructuredOutputParser } from "@langchain/core/output_parsers";
 import { z } from "zod";
 import 'dotenv/config';
 import { AIMessage } from '@langchain/core/messages';
+import { RunnableSequence, RunnablePassthrough } from "@langchain/core/runnables";
 
 // prompts
 const COLLECT_INFO_SYSTEM_TEMPLATE = `You are LemonLawBot, a professional lawyer assistant for consumers with car issues.
@@ -176,36 +177,53 @@ const collectInfoNode = async (state: typeof StateAnnotation.State) => {
 };
 
 const toolNode = async (state: typeof StateAnnotation.State) => {
-  // 确保收集到的信息符合工具要求的类型
-  const toolInput = {
-    manufacturer: state.collectedInfo.manufacturer as string,
-    repairOrders: state.collectedInfo.repairOrders as number,
-    repairType: state.collectedInfo.repairType as string | undefined,
-    daysOOS: state.collectedInfo.daysOOS as number | undefined,
-    vehicleAgeYears: state.collectedInfo.vehicleAgeYears as number | undefined,
-    mileage: state.collectedInfo.mileage as number | undefined,
-    withinMfrWarranty: state.collectedInfo.withinMfrWarranty as boolean | undefined,
-  };
-
-  // 调用柠檬法资格评估工具
-  const qualificationResult = await lemonLawQualificationTool.invoke(toolInput);
-  const result = JSON.parse(qualificationResult as string);
-
-  // 生成评估结果回复
-  const response = await model.invoke([
-    { role: "system", content: COLLECT_INFO_SYSTEM_TEMPLATE },
-    ...state.messages,
-    { 
-      role: "system", 
-      content: `Based on the qualification result: ${JSON.stringify(result)}, provide a clear and helpful response to the user.`
+  const chain = RunnableSequence.from([
+    // prepare tool input
+    RunnablePassthrough.assign({
+      toolInput: () => ({
+        manufacturer: state.collectedInfo.manufacturer as string,
+        repairOrders: state.collectedInfo.repairOrders as number,
+        repairType: state.collectedInfo.repairType as string | undefined,
+        daysOOS: state.collectedInfo.daysOOS as number | undefined,
+        vehicleAgeYears: state.collectedInfo.vehicleAgeYears as number | undefined,
+        mileage: state.collectedInfo.mileage as number | undefined,
+        withinMfrWarranty: state.collectedInfo.withinMfrWarranty as boolean | undefined,
+      })
+    }),
+    // call lemon law qualification tool
+    async ({ toolInput }) => {
+      try {
+        const result = await lemonLawQualificationTool.invoke(toolInput);
+        return JSON.parse(result as string);
+      } catch (error) {
+        console.error('Error in lemon law qualification:', error);
+        throw new Error('Failed to process lemon law qualification');
+      }
+    },
+    // generate assessment result response
+    async (result) => {
+      try {
+        const response = await model.invoke([
+          { role: "system", content: COLLECT_INFO_SYSTEM_TEMPLATE },
+          ...state.messages,
+          { 
+            role: "system", 
+            content: `Based on the qualification result: ${JSON.stringify(result)}, provide a clear and helpful response to the user.`
+          }
+        ]);
+        return {
+          messages: [new AIMessage(response.content as string)],
+          nextStep: "END",
+          qualificationResult: result
+        };
+      } catch (error) {
+        console.error('Error generating response:', error);
+        throw new Error('Failed to generate assessment response');
+      }
     }
   ]);
 
-  return {
-    messages: [response],
-    nextStep: "END",
-    qualificationResult: result
-  };
+  return chain.invoke({});
 };
 
 // build the workflow
