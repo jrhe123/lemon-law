@@ -30,6 +30,18 @@
   
   # Stop services
   docker-compose down
+
+  # Run linter test
+  npm run lint
+
+  # Run jest tests
+  npm run test
+
+  # Create langsmith dataset
+  npm run create-langsmith-dataset
+
+  # Run langsmith evaluation
+  npm run langsmith-eval
 ```
 
 - Express server on port 3000 (Single Agent)
