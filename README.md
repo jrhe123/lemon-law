@@ -54,8 +54,15 @@
 ### **FE**
 
 ```bash
+  # react folder
   cd web
+
+  # node version
+  nvm use 22.14
+
+  # install & start
   npm install
+
   npm start
 ```
 
