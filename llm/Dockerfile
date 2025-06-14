@@ -8,6 +8,7 @@ RUN npm install
 COPY . .
 
 EXPOSE 3000
+EXPOSE 3001
 
 COPY ./src/lemon_rules.json ./dist/lemon_rules.json
 

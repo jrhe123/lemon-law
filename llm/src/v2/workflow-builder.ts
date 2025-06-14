@@ -60,6 +60,12 @@ export const startWorkflow = async (ws: WebSocket, sessionId: string, input: str
     { messages: [{ role: "user", content: input }] },
     { version: "v2", configurable: { thread_id: sessionId } },
   );
+  
+  // NOTE: get the graph state
+  // const currentState = await graph.getState({ configurable: { thread_id: sessionId } })
+  // const collectedInfo = currentState.values.collectedInfo
+  // console.log("collectedInfo: ", collectedInfo)
+
   for await (const { event, data, metadata } of eventStream) {
     if (event === "on_chat_model_stream" && isAIMessageChunk(data.chunk)) {
       if (metadata["nextStep"] === "END") {

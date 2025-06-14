@@ -21,7 +21,6 @@ lib/
 
 # React
 *.env
-.env.*
 *.local
 /node_modules
 /.pnp
@@ -41,12 +40,6 @@ yarn-error.log*
 # Others
 *.log
 *.tgz
-
-# env
-.env
-.env.*
-*.env
-*.env.*
 
 # Mac
 .DS_Store

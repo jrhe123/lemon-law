@@ -130,7 +130,8 @@
         output.textContent = '';
         status.textContent = 'Connecting...';
         lastGraphStep = null;
-        ws = new WebSocket('ws://' + location.hostname + ':3000');
+        const port = version === 'v1' ? 3000 : 3001;
+        ws = new WebSocket('ws://' + location.hostname + ':' + port);
         
         ws.onopen = () => {
           status.textContent = 'Connected.';

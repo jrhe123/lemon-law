@@ -14,25 +14,38 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
-const server = createServer(app);
-const wss = new WebSocketServer({ server });
+// HTTP + WebSocket for v1
+const serverV1 = createServer(app);
+const wssV1 = new WebSocketServer({ server: serverV1 });
 
-wss.on('connection', (ws) => {
+wssV1.on('connection', (ws) => {
   ws.on('message', async (message) => {
     try {
-      const { input, sessionId, version } = JSON.parse(message.toString());
-      if (version === 'v1') {
-        // v1: single agent
-        await startSingleAgent(ws, sessionId, input);
-      } else if (version === 'v2') {
-        // v2: langgraph workflow
-        await startWorkflow(ws, sessionId, input);
-      }
+      const { input, sessionId } = JSON.parse(message.toString());
+      await startSingleAgent(ws, sessionId, input);
     } catch (e) {
       ws.send(JSON.stringify({ type: 'error', data: (e as Error).message }));
     }
   });
 });
 
-const port = process.env.PORT || 3000;
-server.listen(port, () => console.log(`Server listening on port ${port}`));
+// HTTP + WebSocket for v2
+const serverV2 = createServer(app);
+const wssV2 = new WebSocketServer({ server: serverV2 });
+
+wssV2.on('connection', (ws) => {
+  ws.on('message', async (message) => {
+    try {
+      const { input, sessionId } = JSON.parse(message.toString());
+      await startWorkflow(ws, sessionId, input);
+    } catch (e) {
+      ws.send(JSON.stringify({ type: 'error', data: (e as Error).message }));
+    }
+  });
+});
+
+const portV1 = process.env.PORT_V1 || 3000;
+const portV2 = process.env.PORT_V2 || 3001;
+
+serverV1.listen(portV1, () => console.log(`V1 Server listening on port ${portV1}`));
+serverV2.listen(portV2, () => console.log(`V2 Server listening on port ${portV2}`));

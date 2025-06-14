@@ -8,7 +8,9 @@
     "dev": "nodemon --watch src --ext ts,js,json --exec ts-node src/index.ts",
     "lint": "eslint . --ext .ts",
     "test": "jest",
-    "lint:fix": "eslint . --ext .ts --fix"
+    "lint:fix": "eslint . --ext .ts --fix",
+    "create-langsmith-dataset": "ts-node src/v1/__eval__/dataset.ts",
+    "langsmith-eval": "ts-node src/v1/__eval__/eval.ts"
   },
   "dependencies": {
     "@langchain/community": "^0.3.45",
@@ -23,6 +25,8 @@
     "langchain": "0.3.27",
     "langsmith": "^0.3.30",
     "mammoth": "^1.9.1",
+    "openai": "^4.104.0",
+    "openevals": "^0.1.0",
     "tslab": "^1.0.22",
     "uuid": "^11.1.0",
     "ws": "^8.18.2",
